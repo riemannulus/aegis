@@ -72,38 +72,44 @@ with col_r:
 # PnL heatmaps
 # ---------------------------------------------------------------------------
 st.subheader("PnL Heatmaps")
-df_sorted = df.sort_values(time_col)
-df_sorted["hour"] = df_sorted[time_col].dt.hour
-df_sorted["weekday"] = df_sorted[time_col].dt.day_name()
-df_sorted["date"] = df_sorted[time_col].dt.date
+if time_col in df.columns:
+    df_sorted = df.sort_values(time_col)
+    df_sorted["hour"] = df_sorted[time_col].dt.hour
+    df_sorted["weekday"] = df_sorted[time_col].dt.day_name()
+    df_sorted["date"] = df_sorted[time_col].dt.date
 
-ht1, ht2 = st.columns(2)
-with ht1:
-    hourly = df_sorted.groupby("hour")["pnl"].mean().reset_index()
-    fig = px.bar(hourly, x="hour", y="pnl", title="Avg PnL by Hour (UTC)",
-                 color="pnl", color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
-                 template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    ht1, ht2 = st.columns(2)
+    with ht1:
+        hourly = df_sorted.groupby("hour")["pnl"].mean().reset_index()
+        fig = px.bar(hourly, x="hour", y="pnl", title="Avg PnL by Hour (UTC)",
+                     color="pnl", color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+                     template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
 
-with ht2:
-    daily = df_sorted.groupby("weekday")["pnl"].mean().reset_index()
-    day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-    daily["weekday"] = pd.Categorical(daily["weekday"], categories=day_order, ordered=True)
-    daily = daily.sort_values("weekday")
-    fig2 = px.bar(daily, x="weekday", y="pnl", title="Avg PnL by Day of Week",
-                  color="pnl", color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
-                  template="plotly_dark")
-    st.plotly_chart(fig2, use_container_width=True)
+    with ht2:
+        daily = df_sorted.groupby("weekday")["pnl"].mean().reset_index()
+        day_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        daily["weekday"] = pd.Categorical(daily["weekday"], categories=day_order, ordered=True)
+        daily = daily.sort_values("weekday")
+        fig2 = px.bar(daily, x="weekday", y="pnl", title="Avg PnL by Day of Week",
+                      color="pnl", color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+                      template="plotly_dark")
+        st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.info("No timestamp data available for heatmaps.")
 
 # ---------------------------------------------------------------------------
 # PnL distribution histogram
 # ---------------------------------------------------------------------------
 st.subheader("PnL Distribution")
-fig_hist = px.histogram(df, x="pnl", nbins=50, title="PnL Distribution",
-                        template="plotly_dark",
-                        color_discrete_sequence=["#00d4aa"])
-fig_hist.add_vline(x=0, line_dash="dash", line_color="red")
-st.plotly_chart(fig_hist, use_container_width=True)
+if "pnl" in df.columns and not df.empty:
+    fig_hist = px.histogram(df, x="pnl", nbins=50, title="PnL Distribution",
+                            template="plotly_dark",
+                            color_discrete_sequence=["#00d4aa"])
+    fig_hist.add_vline(x=0, line_dash="dash", line_color="red")
+    st.plotly_chart(fig_hist, use_container_width=True)
+else:
+    st.info("No trade data for PnL distribution.")
 
 # ---------------------------------------------------------------------------
 # Attribution tabs

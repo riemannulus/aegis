@@ -132,14 +132,18 @@ class BinanceExecutor(BaseExecutor):
 
     def initialize_futures(self, symbol: str, leverage: int, margin_type: str) -> None:
         """Set leverage and margin type for a Futures symbol (called once at startup)."""
-        binance_symbol = symbol.replace("/", "").replace(":USDT", "")
         try:
             _retry_on_network_error(
-                self._exchange.fapiPrivate_post_leverage,
-                {"symbol": binance_symbol, "leverage": leverage},
+                self._exchange.set_leverage,
+                leverage,
+                symbol,
             )
             logger.info(
-                "%s Leverage set to %dx for %s", settings.log_tag, leverage, binance_symbol
+                "%s Leverage set to %dx for %s", settings.log_tag, leverage, symbol
+            )
+        except ccxt.NotSupported as exc:
+            logger.warning(
+                "%s set_leverage not supported (testnet limitation?): %s", settings.log_tag, exc
             )
         except ccxt.ExchangeError as exc:
             logger.error(
@@ -149,14 +153,19 @@ class BinanceExecutor(BaseExecutor):
 
         try:
             _retry_on_network_error(
-                self._exchange.fapiPrivate_post_margintype,
-                {"symbol": binance_symbol, "marginType": margin_type.upper()},
+                self._exchange.set_margin_mode,
+                margin_type.lower(),
+                symbol,
             )
             logger.info(
                 "%s Margin type set to %s for %s",
                 settings.log_tag,
                 margin_type.upper(),
-                binance_symbol,
+                symbol,
+            )
+        except ccxt.NotSupported as exc:
+            logger.warning(
+                "%s set_margin_mode not supported (testnet limitation?): %s", settings.log_tag, exc
             )
         except ccxt.ExchangeError as exc:
             # "No need to change margin type" is not a real error
@@ -165,7 +174,7 @@ class BinanceExecutor(BaseExecutor):
                     "%s Margin type already %s for %s",
                     settings.log_tag,
                     margin_type.upper(),
-                    binance_symbol,
+                    symbol,
                 )
             else:
                 logger.error(
@@ -184,6 +193,11 @@ class BinanceExecutor(BaseExecutor):
                 "unrealized_pnl": raw.get("info", {})
                 .get("totalUnrealizedProfit", 0.0),
             }
+        except ccxt.NotSupported as exc:
+            logger.warning(
+                "%s fetch_balance not supported (testnet limitation?): %s", settings.log_tag, exc
+            )
+            return {"available": 0.0, "total": 0.0, "unrealized_pnl": 0.0}
         except ccxt.NetworkError as exc:
             logger.error("%s Network error fetching balance: %s", settings.log_tag, exc)
             raise
