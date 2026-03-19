@@ -23,7 +23,7 @@ class TestPaperTraderInterface:
         pt = PaperTrader(initial_balance=5_000.0)
         bal = pt.get_balance()
         assert bal["total"] == pytest.approx(5_000.0)
-        assert bal["free"] == pytest.approx(5_000.0)
+        assert bal["available"] == pytest.approx(5_000.0)
 
     def test_no_position_initially(self):
         pt = PaperTrader(initial_balance=10_000.0)
@@ -39,7 +39,7 @@ class TestPaperTraderInterface:
 class TestPaperTraderOrders:
     def setup_method(self):
         self.pt = PaperTrader(initial_balance=10_000.0, leverage=3)
-        self.pt._current_price = 65_000.0
+        self.pt._current_prices[SYMBOL] = 65_000.0
 
     def test_create_market_long_order(self):
         order = self.pt.create_market_order(SYMBOL, side="buy", amount=0.01)
@@ -71,9 +71,9 @@ class TestPaperTraderOrders:
         assert pos.get("size", 0) == pytest.approx(0.0) or pos.get("side") == "FLAT"
 
     def test_fee_deducted_from_balance(self):
-        initial = self.pt.get_balance()["free"]
+        initial = self.pt.get_balance()["available"]
         self.pt.create_market_order(SYMBOL, side="buy", amount=0.01)
-        after = self.pt.get_balance()["free"]
+        after = self.pt.get_balance()["available"]
         assert after < initial
 
     def test_create_limit_order(self):
@@ -96,33 +96,31 @@ class TestPaperTraderOrders:
         pos = self.pt.get_position(SYMBOL)
         # liquidation_price should be below entry for longs
         assert pos.get("liquidation_price", 0) > 0
-        assert pos["liquidation_price"] < self.pt._current_price
+        assert pos["liquidation_price"] < self.pt._current_prices[SYMBOL]
 
 
 class TestPaperTraderPnL:
     def test_unrealized_pnl_increases_on_price_rise_long(self):
         pt = PaperTrader(initial_balance=10_000.0, leverage=3)
-        pt._current_price = 60_000.0
+        pt._current_prices[SYMBOL] = 60_000.0
         pt.create_market_order(SYMBOL, side="buy", amount=0.01)
-        pt._current_price = 62_000.0
-        pt.update_mark_price(62_000.0)
+        pt.update_price(SYMBOL, 62_000.0)
         pos = pt.get_position(SYMBOL)
         assert pos.get("unrealized_pnl", 0) > 0
 
     def test_unrealized_pnl_increases_on_price_drop_short(self):
         pt = PaperTrader(initial_balance=10_000.0, leverage=3)
-        pt._current_price = 60_000.0
+        pt._current_prices[SYMBOL] = 60_000.0
         pt.create_market_order(SYMBOL, side="sell", amount=0.01)
-        pt._current_price = 58_000.0
-        pt.update_mark_price(58_000.0)
+        pt.update_price(SYMBOL, 58_000.0)
         pos = pt.get_position(SYMBOL)
         assert pos.get("unrealized_pnl", 0) > 0
 
     def test_trade_history_recorded(self):
         pt = PaperTrader(initial_balance=10_000.0, leverage=3)
-        pt._current_price = 60_000.0
+        pt._current_prices[SYMBOL] = 60_000.0
         pt.create_market_order(SYMBOL, side="buy", amount=0.01)
-        pt._current_price = 61_000.0
+        pt._current_prices[SYMBOL] = 61_000.0
         pt.close_position(SYMBOL)
-        history = pt.get_trade_history()
+        history = pt.get_order_history()
         assert len(history) > 0

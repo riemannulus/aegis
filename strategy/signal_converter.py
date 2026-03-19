@@ -125,7 +125,9 @@ class SignalConverter:
                 )
 
         # ------ Step 4: minimum hold-time filter --------------------------
-        if self._hold_candles_remaining > 0 and candidate_dir != self._current_direction:
+        if (self._hold_candles_remaining > 0
+                and candidate_dir != self._current_direction
+                and self._pending_flip_count < self.DIRECTION_CONFIRM):
             self._decrement_hold()
             return SignalResult(
                 raw_prediction=prediction,

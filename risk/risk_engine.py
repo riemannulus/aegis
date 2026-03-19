@@ -164,6 +164,34 @@ class RiskEngine:
             status.message = dd_status.message
             return status
 
+        # --- Liquidation proximity (Futures-specific) --------------------
+        if liquidation_price > 0:
+            dist_entry_liq = abs(entry_price - liquidation_price)
+            dist_current_liq = abs(current_price - liquidation_price)
+            if dist_entry_liq > 0:
+                proximity = 1.0 - dist_current_liq / dist_entry_liq
+                if proximity >= LIQ_CLOSE_PROXIMITY:
+                    status.liquidation_alert = "CLOSE_90"
+                    status.emergency_close = True
+                    msg = (
+                        f"청산가격 90% 접근 — 즉시 전체 청산! "
+                        f"현재가={current_price:.2f}, 청산가={liquidation_price:.2f}"
+                    )
+                    status.message = msg
+                    logger.error("%s %s", settings.log_tag, msg)
+                    self._send_alert(f"🚨 {settings.telegram_tag} {msg}")
+                    return status
+                elif proximity >= LIQ_WARN_PROXIMITY:
+                    status.liquidation_alert = "WARN_80"
+                    msg = (
+                        f"청산가격 80% 접근 — 포지션 50% 축소! "
+                        f"현재가={current_price:.2f}, 청산가={liquidation_price:.2f}"
+                    )
+                    logger.warning("%s %s", settings.log_tag, msg)
+                    self._send_alert(f"⚠️ {settings.telegram_tag} {msg}")
+                    if self.on_reduce_position:
+                        self.on_reduce_position(0.5)
+
         # --- Stop-loss (regime-based) ------------------------------------
         sl = self._regime_params.stop_loss_pct
         if pnl_pct <= -sl:
@@ -203,34 +231,6 @@ class RiskEngine:
                 )
                 self._reset_trailing()
                 return status
-
-        # --- Liquidation proximity (Futures-specific) --------------------
-        if liquidation_price > 0:
-            dist_entry_liq = abs(entry_price - liquidation_price)
-            dist_current_liq = abs(current_price - liquidation_price)
-            if dist_entry_liq > 0:
-                proximity = 1.0 - dist_current_liq / dist_entry_liq
-                if proximity >= LIQ_CLOSE_PROXIMITY:
-                    status.liquidation_alert = "CLOSE_90"
-                    status.emergency_close = True
-                    msg = (
-                        f"청산가격 90% 접근 — 즉시 전체 청산! "
-                        f"현재가={current_price:.2f}, 청산가={liquidation_price:.2f}"
-                    )
-                    status.message = msg
-                    logger.error("%s %s", settings.log_tag, msg)
-                    self._send_alert(f"🚨 {settings.telegram_tag} {msg}")
-                    return status
-                elif proximity >= LIQ_WARN_PROXIMITY:
-                    status.liquidation_alert = "WARN_80"
-                    msg = (
-                        f"청산가격 80% 접근 — 포지션 50% 축소! "
-                        f"현재가={current_price:.2f}, 청산가={liquidation_price:.2f}"
-                    )
-                    logger.warning("%s %s", settings.log_tag, msg)
-                    self._send_alert(f"⚠️ {settings.telegram_tag} {msg}")
-                    if self.on_reduce_position:
-                        self.on_reduce_position(0.5)
 
         # --- Funding rate risk -------------------------------------------
         if abs(funding_rate) >= FUNDING_ALERT_THRESHOLD:
