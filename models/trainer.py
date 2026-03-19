@@ -269,10 +269,27 @@ class ModelTrainer:
     ) -> None:
         """Pull recent data from storage and retrain all models."""
 
-        def _get_data(start_ts, end_ts):
+        def _get_data(start_dt, end_dt):
             if self.storage is None:
-                return None
-            return self.storage.get_candles(start_ts, end_ts)
+                return np.empty((0, 0)), np.empty(0)
+            start_ms = int(start_dt.timestamp() * 1000)
+            end_ms = int(end_dt.timestamp() * 1000)
+            rows = self.storage.get_candles(
+                symbol="BTCUSDT", interval="30m",
+                start_ts=start_ms, end_ts=end_ms,
+            )
+            if not rows:
+                return np.empty((0, 0)), np.empty(0)
+            closes = np.array([r["close"] for r in rows], dtype=np.float64)
+            # Use close-to-close returns as targets
+            y = np.diff(closes) / (closes[:-1] + 1e-9)
+            # Simple feature matrix from OHLCV columns
+            feature_keys = ["open", "high", "low", "close", "volume"]
+            X = np.array(
+                [[r.get(k, 0.0) for k in feature_keys] for r in rows[:-1]],
+                dtype=np.float64,
+            )
+            return X, y
 
         retrain_rolling(
             get_data_fn=_get_data,
