@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aegis-trading"
+version = "0.1.0"
+description = "Aegis — AI Crypto Futures Auto-Trading System"
+requires-python = ">=3.10"
+dependencies = [
+    "ccxt>=4.0",
+    "pyqlib",
+    "lightgbm",
+    "torch",
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "fastapi",
+    "uvicorn[standard]",
+    "apscheduler",
+    "python-telegram-bot",
+    "python-dotenv",
+    "pydantic-settings",
+    "sqlalchemy",
+    "websockets",
+    "requests",
+    "tqdm",
+    "streamlit",
+    "plotly",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "config",
+    "data",
+    "models",
+    "strategy",
+    "risk",
+    "execution",
+    "analytics",
+    "api",
+    "backoffice",
+    "monitor",
+    "scheduler",
+    "scripts",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

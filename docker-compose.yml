@@ -1,0 +1,50 @@
+services:
+  aegis-trader:
+    build: .
+    container_name: aegis-trader
+    command: python -c "from scheduler.orchestrator import TradingOrchestrator; orch = TradingOrchestrator(); orch.start(); import time; time.sleep(999999999)"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./models/saved:/app/models/saved
+    depends_on:
+      - aegis-api
+    restart: unless-stopped
+    networks:
+      - aegis-net
+
+  aegis-api:
+    build: .
+    container_name: aegis-api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models/saved:/app/models/saved
+    restart: unless-stopped
+    networks:
+      - aegis-net
+
+  aegis-backoffice:
+    build: .
+    container_name: aegis-backoffice
+    command: streamlit run backoffice/app.py --server.port 8501 --server.address 0.0.0.0
+    env_file: .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./models/saved:/app/models/saved
+    depends_on:
+      - aegis-api
+    restart: unless-stopped
+    networks:
+      - aegis-net
+    environment:
+      - AEGIS_API_URL=http://aegis-api:8000
+
+networks:
+  aegis-net:
+    driver: bridge
