@@ -129,6 +129,10 @@ class Storage:
     def _session(self) -> Session:
         return self.SessionLocal()
 
+    def init_db(self) -> None:
+        """Ensure all tables exist. Safe to call multiple times."""
+        Base.metadata.create_all(self.engine)
+
     # ------------------------------------------------------------------
     # Candles
     # ------------------------------------------------------------------
@@ -169,6 +173,22 @@ class Storage:
                 q = q.limit(limit)
             return [row.__dict__ for row in q.all()]
 
+    def get_recent_candles(
+        self,
+        symbol: str = "BTCUSDT",
+        interval: str = "30m",
+        limit: int = 200,
+    ):
+        """Return recent candles as a DataFrame (sorted ascending by timestamp)."""
+        import pandas as pd
+
+        rows = self.get_candles(symbol=symbol, interval=interval, limit=limit)
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        df.drop(columns=["_sa_instance_state"], errors="ignore", inplace=True)
+        return df.sort_values("timestamp").reset_index(drop=True)
+
     def get_latest_candle_timestamp(self, symbol: str = "BTCUSDT", interval: str = "30m") -> int | None:
         with self._session() as sess:
             row = (
@@ -194,6 +214,21 @@ class Storage:
             else:
                 sess.add(FundingRate(**row))
             sess.commit()
+
+    def get_recent_funding_rates(
+        self,
+        symbol: str = "BTCUSDT",
+        limit: int = 100,
+    ):
+        """Return recent funding rates as a DataFrame (sorted ascending by timestamp)."""
+        import pandas as pd
+
+        rows = self.get_funding_rates(symbol=symbol, limit=limit)
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows)
+        df.drop(columns=["_sa_instance_state"], errors="ignore", inplace=True)
+        return df.sort_values("timestamp").reset_index(drop=True)
 
     def get_funding_rates(self, symbol: str, limit: int = 100) -> list[dict]:
         with self._session() as sess:
@@ -224,6 +259,10 @@ class Storage:
             sess.add(Order(**row))
             sess.commit()
 
+    def save_order(self, row: dict) -> None:
+        """Insert an order record (used by OrderManager)."""
+        self.insert_order(row)
+
     # ------------------------------------------------------------------
     # Positions
     # ------------------------------------------------------------------
@@ -244,6 +283,10 @@ class Storage:
         with self._session() as sess:
             sess.add(Decision(**row))
             sess.commit()
+
+    def save_decision(self, **kwargs) -> None:
+        """Insert a decision from keyword arguments (used by DecisionLogger)."""
+        self.insert_decision(kwargs)
 
     def get_decisions(self, limit: int = 100) -> list[dict]:
         with self._session() as sess:

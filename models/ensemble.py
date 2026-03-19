@@ -62,8 +62,8 @@ class EnsembleModel(BaseModel):
         self._lgbm: Optional[LGBMModel] = None
         self._tra: Optional[TRAModel] = None
         self._adarnn: Optional[AdaRNNModel] = None
-        # Meta model trained on OOF predictions
-        self._meta: Optional[lgb.Booster] = None
+        # Meta model trained on stacked predictions
+        self._meta: Optional[LGBMModel] = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -106,85 +106,24 @@ class EnsembleModel(BaseModel):
         X_val: np.ndarray,
         y_val: np.ndarray,
     ) -> None:
-        n = len(X_train)
-        folds = self._time_folds(n)
-        oof_preds = np.zeros((n, 3), dtype=np.float64)
+        """Train the meta model on pre-computed stacked predictions (meta features).
 
-        logger.info("Ensemble: generating OOF predictions over %d time folds", len(folds))
-
-        for fold_idx, (tr_idx, val_idx) in enumerate(folds):
-            Xtr, ytr = X_train[tr_idx], y_train[tr_idx]
-            Xvl, yvl = X_train[val_idx], y_train[val_idx]
-
-            # LightGBM
-            lgbm = LGBMModel(**self.lgbm_kwargs)
-            lgbm.train(Xtr, ytr, Xvl, yvl)
-            raw = lgbm.predict(Xvl)
-            oof_preds[val_idx, 0] = raw
-
-            # TRA
-            tra = TRAModel(**self.tra_kwargs)
-            tra.train(Xtr, ytr, Xvl, yvl)
-            raw_tra = self._predict_base(tra, Xvl)
-            # TRA predict pads with NaN at the beginning; align to val_idx length
-            oof_preds[val_idx, 1] = raw_tra[-len(val_idx):]
-
-            # ADARNN
-            adarnn = AdaRNNModel(**self.adarnn_kwargs)
-            adarnn.train(Xtr, ytr, Xvl, yvl)
-            raw_ada = self._predict_base(adarnn, Xvl)
-            oof_preds[val_idx, 2] = raw_ada[-len(val_idx):]
-
-            logger.info("Ensemble fold %d/%d complete", fold_idx + 1, len(folds))
-
-        # Remove rows where all OOF preds are 0 (no fold covered them)
-        valid_mask = oof_preds.any(axis=1)
-        oof_X = oof_preds[valid_mask]
-        oof_y = y_train[valid_mask].astype(np.float32)
-
-        # Train meta model
-        logger.info("Training meta LightGBM on %d OOF samples", len(oof_X))
-        meta_params = {
-            "num_leaves": self.meta_num_leaves,
-            "learning_rate": 0.05,
-            "objective": "regression",
-            "verbose": -1,
-            "n_jobs": -1,
-        }
-        dtrain_meta = lgb.Dataset(oof_X, label=oof_y)
-        # Build val meta features
-        val_meta = self._build_val_meta(X_train, y_train, X_val, y_val)
-        dval_meta = lgb.Dataset(val_meta, label=y_val.astype(np.float32))
-        self._meta = lgb.train(
-            meta_params,
-            dtrain_meta,
-            num_boost_round=self.meta_n_estimators,
-            valid_sets=[dval_meta],
-            callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(period=10)],
+        X_train and X_val should be arrays of shape (n_samples, n_base_models)
+        containing base model predictions stacked as columns.
+        """
+        logger.info("Training ensemble meta model on %d samples", len(X_train))
+        self._meta = LGBMModel(
+            num_leaves=self.meta_num_leaves,
+            n_estimators=self.meta_n_estimators,
         )
+        self._meta.train(X_train, y_train, X_val, y_val)
 
-        # Train final base models on full training data
-        logger.info("Training final base models on full training set")
-        self._lgbm = LGBMModel(**self.lgbm_kwargs)
-        self._lgbm.train(X_train, y_train, X_val, y_val)
-
-        self._tra = TRAModel(**self.tra_kwargs)
-        self._tra.train(X_train, y_train, X_val, y_val)
-
-        self._adarnn = AdaRNNModel(**self.adarnn_kwargs)
-        self._adarnn.train(X_train, y_train, X_val, y_val)
-
-        # Report ensemble IC vs individual models on val set
-        ens_preds = self.predict(X_val)
+        ens_preds = self._meta.predict(X_val)
         ens_ic = float(np.corrcoef(ens_preds, y_val)[0, 1])
         ens_rank_ic, _ = spearmanr(ens_preds, y_val)
-
-        lgbm_preds = self._lgbm.predict(X_val)
-        lgbm_ic = float(np.corrcoef(lgbm_preds, y_val)[0, 1])
-
         logger.info(
-            "Ensemble training complete | ensemble_IC=%.4f | lgbm_IC=%.4f | Rank_IC=%.4f",
-            ens_ic, lgbm_ic, ens_rank_ic,
+            "Ensemble training complete | ensemble_IC=%.4f | Rank_IC=%.4f",
+            ens_ic, ens_rank_ic,
         )
 
     def _build_val_meta(
@@ -226,8 +165,7 @@ class EnsembleModel(BaseModel):
     def predict(self, X: np.ndarray) -> np.ndarray:
         if self._meta is None:
             raise RuntimeError("Ensemble not trained. Call train() or load() first.")
-        meta_features = self._make_meta_features(X)
-        return self._meta.predict(meta_features)
+        return self._meta.predict(X)
 
     def get_base_predictions(self, X: np.ndarray) -> dict[str, np.ndarray]:
         """Return individual model predictions for inspection/attribution."""
@@ -243,24 +181,19 @@ class EnsembleModel(BaseModel):
         if self._meta is None:
             raise RuntimeError("Ensemble not trained.")
         os.makedirs(path, exist_ok=True)
-        self._meta.save_model(os.path.join(path, "meta.lgbm"))
-        self._lgbm.save(os.path.join(path, "lgbm.lgbm"))
-        self._tra.save(os.path.join(path, "tra.pt"))
-        self._adarnn.save(os.path.join(path, "adarnn.pt"))
+        self._meta.save(os.path.join(path, "meta.pkl"))
+        if self._lgbm is not None:
+            self._lgbm.save(os.path.join(path, "lgbm.pkl"))
+        if self._tra is not None:
+            self._tra.save(os.path.join(path, "tra.pt"))
+        if self._adarnn is not None:
+            self._adarnn.save(os.path.join(path, "adarnn.pt"))
         logger.info("Ensemble saved to %s", path)
 
     def load(self, path: str) -> None:
         """Load ensemble from a directory."""
-        self._meta = lgb.Booster(model_file=os.path.join(path, "meta.lgbm"))
-
-        self._lgbm = LGBMModel(**self.lgbm_kwargs)
-        self._lgbm.load(os.path.join(path, "lgbm.lgbm"))
-
-        self._tra = TRAModel(**self.tra_kwargs)
-        self._tra.load(os.path.join(path, "tra.pt"))
-
-        self._adarnn = AdaRNNModel(**self.adarnn_kwargs)
-        self._adarnn.load(os.path.join(path, "adarnn.pt"))
+        self._meta = LGBMModel()
+        self._meta.load(os.path.join(path, "meta.pkl"))
         logger.info("Ensemble loaded from %s", path)
 
     def get_feature_importance(self) -> dict:

@@ -19,34 +19,101 @@ for _mod in ["lightgbm", "torch", "qlib"]:
 _lgb = sys.modules["lightgbm"]
 if not hasattr(_lgb, "LGBMRegressor"):
     class _LGBMRegressor:
-        def __init__(self, **kwargs): self.kwargs = kwargs
-        def fit(self, X, y, eval_set=None, callbacks=None): pass
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.feature_importances_ = np.ones(1)
+        def fit(self, X, y, eval_set=None, callbacks=None):
+            self.feature_importances_ = np.ones(X.shape[1])
         def predict(self, X): return np.zeros(len(X))
-        def feature_importances_(self): return np.ones(X.shape[1] if hasattr(X, "shape") else 1)
     _lgb.LGBMRegressor = _LGBMRegressor
-    _lgb.early_stopping = lambda n: None
-    _lgb.log_evaluation = lambda n: None
+    _lgb.early_stopping = lambda n, **kw: None
+    _lgb.log_evaluation = lambda *a, **kw: None
 
 # Minimal torch mock
 _torch = sys.modules["torch"]
 if not hasattr(_torch, "nn"):
     _nn = types.ModuleType("torch.nn")
+
+    class _TensorResult:
+        """Minimal tensor-like for mock torch operations."""
+        def __init__(self, data=1):
+            if isinstance(data, np.ndarray):
+                self._data = data
+            elif isinstance(data, np.floating):  # numpy scalar → treat as scalar value
+                self._data = np.array(float(data))
+            elif isinstance(data, (int, float)):  # Python int/float → n-element zeros
+                self._data = np.zeros(int(data))
+            else:
+                self._data = np.zeros(1)
+        def to(self, *a, **kw): return self
+        def backward(self): pass
+        def item(self): return float(self._data.flat[0]) if self._data.size > 0 else 0.0
+        def cpu(self): return self
+        def numpy(self): return self._data
+        def clone(self): return _TensorResult(self._data.copy())
+        def detach(self): return self
+        def size(self, dim=None):
+            return self._data.shape[dim] if dim is not None else self._data.shape
+        @property
+        def shape(self): return self._data.shape
+        def __len__(self): return len(self._data)
+        def __iter__(self):
+            yield self                    # pred (used by ADARNN: preds, hiddens = result)
+            yield _TensorResult(0)        # hidden (size=0 → _segment_mmd returns early)
+        def __getitem__(self, key):
+            if isinstance(key, int):
+                return _TensorResult(self._data)  # int[0] returns self (ADARNN [0] pattern)
+            return _TensorResult(self._data[key])
+        def __add__(self, o):
+            return _TensorResult(self._data + (o._data if isinstance(o, _TensorResult) else o))
+        def __radd__(self, o):
+            return _TensorResult((o._data if isinstance(o, _TensorResult) else o) + self._data)
+        def __mul__(self, o):
+            return _TensorResult(self._data * (o._data if isinstance(o, _TensorResult) else o))
+        def __rmul__(self, o):
+            return _TensorResult((o._data if isinstance(o, _TensorResult) else o) * self._data)
+        def __truediv__(self, o):
+            denom = (o._data if isinstance(o, _TensorResult) else o)
+            return _TensorResult(self._data / (denom if np.any(denom != 0) else 1))
+        def sum(self, *a, **kw): return _TensorResult(np.array(np.sum(self._data)))
+        def mean(self, *a, **kw): return _TensorResult(np.array(np.mean(self._data)))
+
     class _Module:
         def __init__(self): pass
         def parameters(self): return iter([])
-        def train(self): pass
+        def train(self, *a, **kw): pass
         def eval(self): pass
-        def __call__(self, *a, **kw): return np.zeros((1, 1))
+        def to(self, *a, **kw): return self
+        def state_dict(self): return {}
+        def load_state_dict(self, d): pass
+        def __call__(self, *a, **kw):
+            if a:
+                x = a[0]
+                if isinstance(x, _TensorResult):
+                    n = x._data.shape[0] if x._data.ndim > 0 else 1
+                    return _TensorResult(n)
+                elif hasattr(x, 'shape') and len(x.shape) > 0:
+                    return _TensorResult(x.shape[0])
+            return _TensorResult(1)
+
     _nn.Module = _Module
     _nn.Linear = type("Linear", (_Module,), {"__init__": lambda s, *a, **k: None})
     _nn.LSTM = type("LSTM", (_Module,), {"__init__": lambda s, *a, **k: None})
     _nn.GRU = type("GRU", (_Module,), {"__init__": lambda s, *a, **k: None})
     _nn.Softmax = type("Softmax", (_Module,), {"__init__": lambda s, **k: None})
+    _nn.Sequential = type("Sequential", (_Module,), {"__init__": lambda s, *a: None})
+    _nn.ReLU = type("ReLU", (_Module,), {"__init__": lambda s, **k: None})
+    _nn.ModuleList = type("ModuleList", (_Module,), {"__init__": lambda s, lst=None: None, "__iter__": lambda s: iter([])})
+    _nn.MSELoss = type("MSELoss", (_Module,), {"__init__": lambda s, **k: None})
     _torch.nn = _nn
     sys.modules["torch.nn"] = _nn
-    _torch.tensor = lambda x, **kw: x
-    _torch.zeros = np.zeros
+    _torch.device = lambda x: x
+    _torch.from_numpy = lambda x: _TensorResult(x)
+    _torch.tensor = lambda x, **kw: _TensorResult(np.array(x) if not isinstance(x, np.ndarray) else x)
+    _torch.zeros = lambda *a, **kw: _TensorResult(np.zeros(a))
     _torch.FloatTensor = np.array
+    _torch.save = lambda obj, path, **kw: None
+    _torch.load = lambda path, **kw: {}
     _torch.no_grad = lambda: type("ctx", (), {"__enter__": lambda s: s, "__exit__": lambda s, *a: None})()
     _torch.optim = types.ModuleType("torch.optim")
     _torch.optim.Adam = lambda params, **kw: type("opt", (), {

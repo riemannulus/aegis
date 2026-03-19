@@ -9,9 +9,9 @@ description = "Aegis — AI Crypto Futures Auto-Trading System"
 requires-python = ">=3.10"
 dependencies = [
     "ccxt>=4.0",
-    "pyqlib",
     "lightgbm",
     "torch",
+    "scipy<1.15",
     "pandas",
     "numpy",
     "scikit-learn",

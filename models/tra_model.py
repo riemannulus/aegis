@@ -130,7 +130,11 @@ class TRAModel(BaseModel):
         num_epochs: int = 50,
         batch_size: int = 256,
         device: str = "cpu",
+        input_size: Optional[int] = None,
+        lookback: Optional[int] = None,
     ) -> None:
+        if lookback is not None:
+            lookback_window = lookback
         self.num_predictors = num_predictors
         self.hidden_size = hidden_size
         self.router_hidden = router_hidden

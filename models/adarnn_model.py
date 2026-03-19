@@ -98,6 +98,7 @@ class AdaRNNModel(BaseModel):
         batch_size: int = 256,
         mmd_weight: float = 0.1,
         device: str = "cpu",
+        input_size: Optional[int] = None,
     ) -> None:
         self.num_segments = num_segments
         self.hidden_size = hidden_size
@@ -237,7 +238,7 @@ class AdaRNNModel(BaseModel):
         self._net.eval()
         with torch.no_grad():
             preds = self._net(self._to_tensor(X_seq))[0].cpu().numpy()
-        pad = np.full(self.lookback_window - 1, np.nan, dtype=np.float32)
+        pad = np.full(len(X) - len(preds), np.nan, dtype=np.float32)
         return np.concatenate([pad, preds])
 
     def save(self, path: str) -> None:
@@ -266,3 +267,7 @@ class AdaRNNModel(BaseModel):
         self._net.load_state_dict(checkpoint["state_dict"])
         self._net.eval()
         logger.info("ADARNN model loaded from %s", path)
+
+
+# Alias for backwards compatibility with tests
+ADANNModel = AdaRNNModel

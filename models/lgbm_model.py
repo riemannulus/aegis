@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import pickle
 from typing import Optional
 
 import lightgbm as lgb
@@ -31,22 +32,17 @@ class LGBMModel(BaseModel):
         early_stopping_rounds: int = 50,
         feature_names: Optional[list[str]] = None,
     ) -> None:
-        self.params = {
-            "num_leaves": num_leaves,
-            "learning_rate": learning_rate,
-            "n_estimators": n_estimators,
-            "min_child_samples": min_child_samples,
-            "subsample": subsample,
-            "colsample_bytree": colsample_bytree,
-            "reg_alpha": reg_alpha,
-            "reg_lambda": reg_lambda,
-            "objective": "regression",
-            "verbose": -1,
-            "n_jobs": -1,
-        }
+        self.num_leaves = num_leaves
+        self.learning_rate = learning_rate
+        self.n_estimators = n_estimators
+        self.min_child_samples = min_child_samples
+        self.subsample = subsample
+        self.colsample_bytree = colsample_bytree
+        self.reg_alpha = reg_alpha
+        self.reg_lambda = reg_lambda
         self.early_stopping_rounds = early_stopping_rounds
         self.feature_names = feature_names
-        self._model: Optional[lgb.Booster] = None
+        self._model: Optional[lgb.LGBMRegressor] = None
 
     def train(
         self,
@@ -56,24 +52,26 @@ class LGBMModel(BaseModel):
         y_val: np.ndarray,
     ) -> None:
         """Train with early stopping on validation loss, log IC at each 50 rounds."""
-        feature_names = self.feature_names or [f"f{i}" for i in range(X_train.shape[1])]
-
-        dtrain = lgb.Dataset(X_train, label=y_train, feature_name=feature_names)
-        dval = lgb.Dataset(X_val, label=y_val, reference=dtrain, feature_name=feature_names)
-
+        self._model = lgb.LGBMRegressor(
+            num_leaves=self.num_leaves,
+            learning_rate=self.learning_rate,
+            n_estimators=self.n_estimators,
+            min_child_samples=self.min_child_samples,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            reg_alpha=self.reg_alpha,
+            reg_lambda=self.reg_lambda,
+            objective="regression",
+            verbose=-1,
+            n_jobs=-1,
+        )
         callbacks = [
             lgb.early_stopping(self.early_stopping_rounds, verbose=False),
             lgb.log_evaluation(period=50),
         ]
-
-        params = dict(self.params)
-        n_estimators = params.pop("n_estimators")
-
-        self._model = lgb.train(
-            params,
-            dtrain,
-            num_boost_round=n_estimators,
-            valid_sets=[dval],
+        self._model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
             callbacks=callbacks,
         )
 
@@ -81,8 +79,7 @@ class LGBMModel(BaseModel):
         ic = float(np.corrcoef(val_preds, y_val)[0, 1])
         rank_ic, _ = spearmanr(val_preds, y_val)
         logger.info(
-            "LightGBM training complete | best_iteration=%d | IC=%.4f | Rank_IC=%.4f",
-            self._model.best_iteration,
+            "LightGBM training complete | IC=%.4f | Rank_IC=%.4f",
             ic,
             rank_ic,
         )
@@ -96,17 +93,22 @@ class LGBMModel(BaseModel):
         if self._model is None:
             raise RuntimeError("No model to save.")
         os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
-        self._model.save_model(path)
+        with open(path, "wb") as f:
+            pickle.dump(self._model, f)
         logger.info("LightGBM model saved to %s", path)
 
     def load(self, path: str) -> None:
-        self._model = lgb.Booster(model_file=path)
+        with open(path, "rb") as f:
+            self._model = pickle.load(f)
         logger.info("LightGBM model loaded from %s", path)
 
     def get_feature_importance(self) -> dict:
         if self._model is None:
             raise RuntimeError("Model not trained.")
-        names = self._model.feature_name()
-        scores = self._model.feature_importance(importance_type="gain")
-        total = scores.sum() or 1.0
-        return {name: float(score / total) for name, score in zip(names, scores)}
+        fi = self._model.feature_importances_
+        if callable(fi):
+            fi = fi()
+        n = len(fi)
+        names = self.feature_names or [f"f{i}" for i in range(n)]
+        total = float(fi.sum()) or 1.0
+        return {name: float(score / total) for name, score in zip(names, fi)}

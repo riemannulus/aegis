@@ -53,6 +53,7 @@ class BinanceExecutor(BaseExecutor):
 
     def __init__(self) -> None:
         self._exchange: ccxt.binance = settings.build_ccxt_exchange()
+        self._use_testnet: bool = settings.USE_TESTNET
         self._first_order_sent = False
         self._daily_trade_count = 0
         self._daily_trade_date: str | None = None
@@ -127,7 +128,7 @@ class BinanceExecutor(BaseExecutor):
     # ------------------------------------------------------------------
 
     def is_testnet(self) -> bool:
-        return settings.USE_TESTNET
+        return self._use_testnet
 
     def initialize_futures(self, symbol: str, leverage: int, margin_type: str) -> None:
         """Set leverage and margin type for a Futures symbol (called once at startup)."""

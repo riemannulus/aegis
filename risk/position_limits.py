@@ -56,6 +56,8 @@ class PositionLimits:
         self._daily_trades = 0
         self._daily_loss_usdt = 0.0
         self._opening_balance = opening_balance
+        self._consecutive_losses = 0
+        self._cooldown_remaining = 0
         logger.info("%s Daily limits reset. Opening balance: %.2f USDT",
                     settings.log_tag, opening_balance)
 

@@ -52,7 +52,7 @@ def _make_mock_exchange():
             "leverage": 3,
         }
     ]
-    ex.create_order.return_value = {
+    _order_dict = {
         "id": "order-001",
         "status": "closed",
         "side": "buy",
@@ -61,6 +61,9 @@ def _make_mock_exchange():
         "average": 65000.0,
         "fee": {"cost": 0.52, "currency": "USDT"},
     }
+    ex.create_order.return_value = _order_dict
+    ex.create_market_order.return_value = _order_dict
+    ex.create_limit_order.return_value = _order_dict
     ex.fetch_order.return_value = {"id": "order-001", "status": "closed"}
     ex.cancel_order.return_value = {"id": "order-001", "status": "canceled"}
     ex.fapiPrivate_post_leverage = MagicMock(return_value={})
@@ -111,7 +114,7 @@ class TestBinanceExecutorUnit:
     def test_get_balance_returns_usdt(self):
         executor, mock_ex = _make_executor()
         bal = executor.get_balance()
-        assert "free" in bal or "USDT" in bal
+        assert "available" in bal
         mock_ex.fetch_balance.assert_called()
 
     def test_get_position_returns_dict(self):
@@ -123,7 +126,7 @@ class TestBinanceExecutorUnit:
         executor, mock_ex = _make_executor()
         order = executor.create_market_order(SYMBOL, "buy", 0.01)
         assert order["status"] == "closed"
-        mock_ex.create_order.assert_called()
+        mock_ex.create_market_order.assert_called()
 
     def test_create_market_order_sell(self):
         executor, mock_ex = _make_executor()
@@ -134,7 +137,7 @@ class TestBinanceExecutorUnit:
         executor, mock_ex = _make_executor()
         order = executor.create_limit_order(SYMBOL, "buy", 0.01, 64_000.0)
         assert order is not None
-        mock_ex.create_order.assert_called()
+        mock_ex.create_limit_order.assert_called()
 
     def test_close_position(self):
         executor, mock_ex = _make_executor()

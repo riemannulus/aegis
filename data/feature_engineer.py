@@ -153,7 +153,12 @@ def compute_features(df: pd.DataFrame, funding_df: pd.DataFrame | None = None) -
     # NaN handling: forward-fill then drop remaining NaN rows
     # ------------------------------------------------------------------
     feat = feat.ffill()
-    feat = feat.dropna().reset_index(drop=True)
+    # Exclude columns that are entirely NaN (placeholders populated externally) from dropna
+    _always_nan = {c for c in feat.columns if feat[c].isna().all()}
+    _drop_subset = [c for c in feat.columns if c != "timestamp" and c not in _always_nan]
+    feat = feat.dropna(subset=_drop_subset).reset_index(drop=True)
+    # Fill remaining placeholder NaN columns (basis, OI, etc.) with 0
+    feat = feat.fillna(0.0)
 
     logger.debug("Feature engineering complete: %d rows, %d features", len(feat), len(feat.columns) - 1)
     return feat
