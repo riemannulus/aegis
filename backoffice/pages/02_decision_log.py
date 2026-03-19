@@ -80,11 +80,14 @@ else:
 # Table + detail panel
 # ---------------------------------------------------------------------------
 st.subheader("Decision Records")
-display_df = df[["timestamp", "decision", "direction", "z_score", "regime", "reason"]].copy()
-display_df["z_score"] = display_df["z_score"].apply(lambda x: f"{float(x):.2f}" if pd.notna(x) else "")
+_TABLE_COLS = ["timestamp", "decision", "direction", "z_score", "regime", "reason"]
+if df.empty:
+    st.stop()
+display_df = df[[c for c in _TABLE_COLS if c in df.columns]].copy() if not df.empty else pd.DataFrame(columns=_TABLE_COLS)
+display_df["z_score"] = display_df["z_score"].apply(lambda x: f"{float(x):.2f}" if pd.notna(x) else "") if "z_score" in display_df.columns else ""
 display_df["timestamp"] = display_df["timestamp"].apply(
     lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(x) else ""
-)
+) if "timestamp" in display_df.columns else ""
 
 sel_result = st.dataframe(
     display_df,

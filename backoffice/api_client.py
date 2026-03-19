@@ -7,13 +7,14 @@ Falls back gracefully if the API is unavailable (shows empty/demo data).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-API_BASE = "http://localhost:8000"
+API_BASE = os.environ.get("AEGIS_API_URL", "http://localhost:8000")
 TIMEOUT = 5  # seconds
 
 

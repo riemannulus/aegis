@@ -54,6 +54,8 @@ else:
 
 if "pnl" not in df.columns and "net_pnl" in df.columns:
     df["pnl"] = df["net_pnl"]
+elif "pnl" not in df.columns:
+    df["pnl"] = 0.0
 
 df["result"] = df["pnl"].apply(lambda x: "WIN" if x > 0 else "LOSS")
 
@@ -87,12 +89,14 @@ c5.metric("Total Funding Cost", f"${total_funding:.2f}")
 # ---------------------------------------------------------------------------
 # Cumulative PnL chart
 # ---------------------------------------------------------------------------
-df_sorted = df.sort_values("exit_time" if "exit_time" in df.columns else "timestamp")
+_sort_col = "exit_time" if "exit_time" in df.columns else ("timestamp" if "timestamp" in df.columns else None)
+df_sorted = df.sort_values(_sort_col) if _sort_col else df.copy()
 df_sorted["cum_pnl"] = df_sorted["pnl"].cumsum()
-time_col = "exit_time" if "exit_time" in df_sorted.columns else "timestamp"
-fig_eq = px.line(df_sorted, x=time_col, y="cum_pnl", title="Cumulative PnL",
-                 template="plotly_dark")
-st.plotly_chart(fig_eq, use_container_width=True)
+time_col = _sort_col if _sort_col and _sort_col in df_sorted.columns else None
+if time_col and not df_sorted.empty:
+    fig_eq = px.line(df_sorted, x=time_col, y="cum_pnl", title="Cumulative PnL",
+                     template="plotly_dark")
+    st.plotly_chart(fig_eq, use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Trade table
