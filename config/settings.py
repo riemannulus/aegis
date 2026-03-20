@@ -74,17 +74,19 @@ class Settings(BaseSettings):
     def build_ccxt_exchange(self):
         """Build a configured CCXT Binance Futures exchange instance."""
         import ccxt
+        options = {
+            "defaultType": self.MARKET_TYPE,   # must be 'future'
+            "adjustForTimeDifference": True,
+        }
+        if self.USE_TESTNET:
+            options["demo"] = True
+
         exchange = ccxt.binance({
             "apiKey": self.api_key,
             "secret": self.api_secret,
             "enableRateLimit": True,
-            "options": {
-                "defaultType": self.MARKET_TYPE,   # must be 'future'
-                "adjustForTimeDifference": True,
-            },
+            "options": options,
         })
-        if self.USE_TESTNET:
-            exchange.set_sandbox_mode(True)
         return exchange
 
 

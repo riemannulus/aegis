@@ -60,7 +60,7 @@ class BinanceExecutor(BaseExecutor):
 
         tag = settings.log_tag
         if settings.USE_TESTNET:
-            logger.info("%s BinanceExecutor initialised (sandbox=True)", tag)
+            logger.info("%s BinanceExecutor initialised (demo=True)", tag)
         else:
             for _ in range(_MAINNET_WARNING_COUNT):
                 logger.warning(

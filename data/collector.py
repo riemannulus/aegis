@@ -145,17 +145,19 @@ class RealtimeCollector:
         import ccxt.pro as ccxtpro
         from config.settings import settings
 
+        options = {
+            "defaultType": settings.MARKET_TYPE,
+            "adjustForTimeDifference": True,
+        }
+        if settings.USE_TESTNET:
+            options["demo"] = True
+
         exchange = ccxtpro.binance({
             "apiKey": settings.api_key,
             "secret": settings.api_secret,
             "enableRateLimit": True,
-            "options": {
-                "defaultType": settings.MARKET_TYPE,
-                "adjustForTimeDifference": True,
-            },
+            "options": options,
         })
-        if settings.USE_TESTNET:
-            exchange.set_sandbox_mode(True)
 
         self._running = True
         logger.info("%s Starting live candle collection for %s %s", _log_tag(), self.symbol, self.interval)

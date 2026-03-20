@@ -171,6 +171,9 @@ def train_all_models(
         ensemble.train(X_train, y_train, X_val, y_val)
         ens_dir = os.path.join(save_dir, f"ensemble_{timestamp}")
         ensemble.save(ens_dir)
+        # Also save to stable path so orchestrator can find the latest ensemble
+        stable_dir = os.path.join(save_dir, "ensemble")
+        ensemble.save(stable_dir)
         models["ensemble"] = ensemble
         logger.info("Ensemble metrics: %s", evaluate(ensemble, X_val, y_val))
 
@@ -261,6 +264,7 @@ class ModelTrainer:
     def __init__(self, storage=None, save_dir: str = "models/saved"):
         self.storage = storage
         self.save_dir = save_dir
+        self._models: dict[str, BaseModel] = {}
 
     def retrain_rolling(
         self,
@@ -301,3 +305,140 @@ class ModelTrainer:
     def train_all(self, X, y, val_ratio=_VAL_RATIO):
         """Train all models on the provided dataset."""
         return train_all_models(X, y, val_ratio=val_ratio, save_dir=self.save_dir)
+
+    def load_all_models(self) -> None:
+        """Scan save_dir and load the latest version of each model type."""
+        import glob
+
+        if not os.path.isdir(self.save_dir):
+            logger.warning("load_all_models: save_dir %s does not exist", self.save_dir)
+            return
+
+        # --- LightGBM: latest *.lgbm file ---
+        lgbm_files = sorted(glob.glob(os.path.join(self.save_dir, "*.lgbm")))
+        if lgbm_files:
+            try:
+                m = LGBMModel()
+                m.load(lgbm_files[-1])
+                self._models["lgbm"] = m
+                logger.info("Loaded lgbm from %s", lgbm_files[-1])
+            except Exception as exc:
+                logger.warning("Failed to load lgbm: %s", exc)
+
+        # --- TRA: latest *tra*.pt file ---
+        tra_files = sorted(glob.glob(os.path.join(self.save_dir, "*tra*.pt")))
+        if tra_files:
+            try:
+                m = TRAModel()
+                m.load(tra_files[-1])
+                self._models["tra"] = m
+                logger.info("Loaded tra from %s", tra_files[-1])
+            except Exception as exc:
+                logger.warning("Failed to load tra: %s", exc)
+
+        # --- ADARNN: latest *adarnn*.pt file ---
+        adarnn_files = sorted(glob.glob(os.path.join(self.save_dir, "*adarnn*.pt")))
+        if adarnn_files:
+            try:
+                m = AdaRNNModel()
+                m.load(adarnn_files[-1])
+                self._models["adarnn"] = m
+                logger.info("Loaded adarnn from %s", adarnn_files[-1])
+            except Exception as exc:
+                logger.warning("Failed to load adarnn: %s", exc)
+
+        # --- Ensemble: latest ensemble_* directory ---
+        ens_dirs = sorted([
+            d for d in glob.glob(os.path.join(self.save_dir, "ensemble_*"))
+            if os.path.isdir(d)
+        ])
+        if ens_dirs:
+            try:
+                m = EnsembleModel()
+                m.load(ens_dirs[-1])
+                self._models["ensemble"] = m
+                logger.info("Loaded ensemble from %s", ens_dirs[-1])
+            except Exception as exc:
+                logger.warning("Failed to load ensemble: %s", exc)
+
+        logger.info("load_all_models: loaded %d model(s): %s", len(self._models), list(self._models.keys()))
+
+    def predict_all(self, X: np.ndarray) -> dict:
+        """Run prediction through all loaded models.
+
+        Returns dict with keys: lgbm, tra, adarnn, ensemble, tra_router_weights.
+        Missing or failing models return 0.0 gracefully.
+        """
+        result: dict = {
+            "lgbm": 0.0,
+            "tra": 0.0,
+            "adarnn": 0.0,
+            "ensemble": 0.0,
+            "tra_router_weights": [0.33, 0.33, 0.34],
+        }
+
+        for name in ("lgbm", "tra", "adarnn", "ensemble"):
+            model = self._models.get(name)
+            if model is None:
+                continue
+            try:
+                preds = model.predict(X)
+                valid = preds[np.isfinite(preds)]
+                result[name] = float(valid[-1]) if len(valid) > 0 else 0.0
+            except Exception as exc:
+                logger.debug("predict_all[%s] failed: %s", name, exc)
+
+        # TRA router weights for regime detection
+        tra_model = self._models.get("tra")
+        if tra_model is not None and hasattr(tra_model, "get_router_weights"):
+            try:
+                weights = tra_model.get_router_weights(X)
+                if weights is not None and len(weights) > 0:
+                    result["tra_router_weights"] = weights.tolist()
+            except Exception as exc:
+                logger.debug("predict_all[tra_router_weights] failed: %s", exc)
+
+        return result
+
+    def get_model_metrics(self) -> dict:
+        """Return dict with model file info and lgbm feature importance."""
+        import glob
+
+        metrics: dict = {
+            "last_retrain_at": None,
+            "models_loaded": list(self._models.keys()),
+            "model_files": {},
+            "feature_importance": {},
+        }
+
+        if not os.path.isdir(self.save_dir):
+            return metrics
+
+        for pattern, key in [("*.lgbm", "lgbm"), ("*tra*.pt", "tra"), ("*adarnn*.pt", "adarnn")]:
+            files = sorted(glob.glob(os.path.join(self.save_dir, pattern)))
+            if files:
+                latest = files[-1]
+                mtime = os.path.getmtime(latest)
+                mtime_str = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                metrics["model_files"][key] = {"path": latest, "modified": mtime_str}
+                if metrics["last_retrain_at"] is None or mtime_str > metrics["last_retrain_at"]:
+                    metrics["last_retrain_at"] = mtime_str
+
+        ens_dirs = sorted([
+            d for d in glob.glob(os.path.join(self.save_dir, "ensemble_*"))
+            if os.path.isdir(d)
+        ])
+        if ens_dirs:
+            latest = ens_dirs[-1]
+            mtime = os.path.getmtime(latest)
+            mtime_str = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+            metrics["model_files"]["ensemble"] = {"path": latest, "modified": mtime_str}
+
+        lgbm_model = self._models.get("lgbm")
+        if lgbm_model is not None and hasattr(lgbm_model, "get_feature_importance"):
+            try:
+                metrics["feature_importance"] = lgbm_model.get_feature_importance()
+            except Exception:
+                pass
+
+        return metrics

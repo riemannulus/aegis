@@ -136,13 +136,13 @@ class TestCCXTInitBranching:
             sys.modules["ccxt"].binance = original_binance
         return mock_exchange, init_kwargs, mock_exchange
 
-    def test_testnet_sets_sandbox_mode(self):
-        _, _, mock_exchange = self._build_exchange(use_testnet=True)
-        mock_exchange.set_sandbox_mode.assert_called_once_with(True)
+    def test_testnet_sets_demo_mode(self):
+        _, init_kwargs, _ = self._build_exchange(use_testnet=True)
+        assert init_kwargs["options"]["demo"] is True
 
-    def test_mainnet_does_not_call_sandbox_mode(self):
-        _, _, mock_exchange = self._build_exchange(use_testnet=False)
-        mock_exchange.set_sandbox_mode.assert_not_called()
+    def test_mainnet_does_not_set_demo_mode(self):
+        _, init_kwargs, _ = self._build_exchange(use_testnet=False)
+        assert "demo" not in init_kwargs["options"]
 
     def test_testnet_uses_testnet_api_key_in_ccxt(self):
         _, init_kwargs, _ = self._build_exchange(use_testnet=True)
@@ -369,8 +369,8 @@ class TestNoHardcodedSandboxValues:
         s_main = _make_settings(use_testnet=False)
         assert s_test.api_key != s_main.api_key
 
-    def test_build_ccxt_conditionally_calls_sandbox(self):
-        """set_sandbox_mode(True) called only for testnet, never for mainnet."""
+    def test_build_ccxt_conditionally_sets_demo(self):
+        """demo=True in options only for testnet, absent for mainnet."""
         original_binance = sys.modules["ccxt"].binance
         for use_testnet in [True, False]:
             s = _make_settings(use_testnet=use_testnet)
@@ -379,9 +379,10 @@ class TestNoHardcodedSandboxValues:
             sys.modules["ccxt"].binance = mock_binance_cls
             try:
                 s.build_ccxt_exchange()
+                init_kwargs = mock_binance_cls.call_args[0][0]
             finally:
                 sys.modules["ccxt"].binance = original_binance
             if use_testnet:
-                mock_exchange.set_sandbox_mode.assert_called_once_with(True)
+                assert init_kwargs["options"]["demo"] is True
             else:
-                mock_exchange.set_sandbox_mode.assert_not_called()
+                assert "demo" not in init_kwargs["options"]

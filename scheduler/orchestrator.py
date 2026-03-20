@@ -56,6 +56,7 @@ class TradingOrchestrator:
 
         self._current_funding_rate: float = 0.0
         self._start_balance: float = 0.0
+        self._model_ready: bool = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -130,10 +131,12 @@ class TradingOrchestrator:
 
         self._ensemble = EnsembleModel()
         try:
-            self._ensemble.load("models/saved/ensemble.pkl")
+            self._ensemble.load("models/saved/ensemble")
+            self._model_ready = True
             logger.info("%s Ensemble model loaded.", settings.log_tag)
         except Exception:
-            logger.warning("%s No saved ensemble model — will need training.", settings.log_tag)
+            self._model_ready = False
+            logger.warning("%s No saved ensemble model — trading paused until model is trained.", settings.log_tag)
 
         self._trainer = ModelTrainer(storage=self._storage)
         self._signal_converter = SignalConverter()
@@ -228,6 +231,10 @@ class TradingOrchestrator:
     def _run_trading_cycle(self, candle: dict | None = None) -> None:
         """Execute one complete 30-min trading cycle (steps 1–9)."""
         if not self._running:
+            return
+
+        if not self._model_ready:
+            logger.info("%s Skipping trading cycle — model not loaded.", settings.log_tag)
             return
 
         logger.info("%s === Trading cycle start ===", settings.log_tag)
@@ -445,7 +452,8 @@ class TradingOrchestrator:
         logger.info("%s Starting weekly model retrain...", settings.log_tag)
         try:
             self._trainer.retrain_rolling()
-            self._ensemble.load("models/saved/ensemble.pkl")
+            self._ensemble.load("models/saved/ensemble")
+            self._model_ready = True
             logger.info("%s Model retrain complete.", settings.log_tag)
             self._telegram.send_raw("Weekly model retrain completed successfully.")
         except Exception as exc:

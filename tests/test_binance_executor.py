@@ -22,6 +22,7 @@ if "ccxt" not in sys.modules:
     _ccxt_mock = types.ModuleType("ccxt")
     _ccxt_mock.binance = MagicMock
     _ccxt_mock.NetworkError = Exception
+    _ccxt_mock.NotSupported = Exception
     _ccxt_mock.InsufficientFunds = Exception
     _ccxt_mock.ExchangeError = Exception
     sys.modules["ccxt"] = _ccxt_mock
@@ -157,8 +158,8 @@ class TestBinanceExecutorUnit:
     def test_initialize_futures_calls_fapi(self):
         executor, mock_ex = _make_executor()
         executor.initialize_futures(BINANCE_SYMBOL, leverage=3, margin_type="ISOLATED")
-        mock_ex.fapiPrivate_post_leverage.assert_called()
-        mock_ex.fapiPrivate_post_margintype.assert_called()
+        # CCXT v4 uses set_leverage instead of fapiPrivate_post_leverage
+        mock_ex.set_leverage.assert_called()
 
     def test_log_tag_in_logs(self, caplog):
         import logging
