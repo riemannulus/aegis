@@ -20,9 +20,40 @@ st.title("Backtest Results Viewer")
 st.caption("Compare historical backtest runs vs live trading performance.")
 
 # ---------------------------------------------------------------------------
+# Run new backtest
+# ---------------------------------------------------------------------------
+with st.expander("Run New Backtest", expanded=False):
+    with st.form("run_backtest_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            symbol = st.text_input("Symbol", value="BTC/USDT:USDT")
+            interval = st.selectbox("Interval", ["1h", "4h", "1d", "15m"])
+            leverage = st.number_input("Leverage", min_value=1, max_value=20, value=3)
+        with col2:
+            start_date = st.date_input("Start Date")
+            end_date = st.date_input("End Date")
+            capital = st.number_input("Initial Capital (USDT)", min_value=100, value=10000)
+        submitted = st.form_submit_button("Execute Backtest", type="primary")
+        if submitted:
+            with st.spinner("Triggering backtest run..."):
+                result = api.post_run_backtest({
+                    "symbol": symbol, "interval": interval,
+                    "start": str(start_date), "end": str(end_date),
+                    "leverage": leverage, "capital": capital,
+                })
+            if result and result.get("success"):
+                st.success(result.get("message", "Backtest triggered successfully."))
+                st.rerun()
+            else:
+                st.error("Failed to trigger backtest (API unavailable or error).")
+
+st.divider()
+
+# ---------------------------------------------------------------------------
 # Load backtest list
 # ---------------------------------------------------------------------------
-bt_list = api.get_backtest_list() or []
+with st.spinner("Loading backtest results..."):
+    bt_list = api.get_backtest_list() or []
 
 # Also scan local files as fallback
 results_dir = Path("data/backtest_results")
@@ -33,7 +64,7 @@ all_runs = [b.get("id", b.get("name", "")) for b in bt_list] + local_names
 all_runs = list(dict.fromkeys(all_runs))  # deduplicate, preserve order
 
 if not all_runs:
-    st.info("No backtest results found. Run `scripts/run_backtest.py` to generate results.")
+    st.info("No backtest results found. Use the 'Run New Backtest' form above to generate results.")
     st.stop()
 
 # ---------------------------------------------------------------------------

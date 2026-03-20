@@ -142,3 +142,7 @@ def post_set_leverage(leverage: int) -> Optional[dict]:
 
 def post_force_retrain() -> Optional[dict]:
     return _post("/control/force-retrain")
+
+
+def post_run_backtest(params: Optional[dict] = None) -> Optional[dict]:
+    return _post("/backtests/run", json=params or {})

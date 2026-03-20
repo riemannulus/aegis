@@ -89,6 +89,7 @@ class PaperTrader(BaseExecutor):
         self._funding_rate = funding_rate
         self._positions: dict[str, PaperPosition] = {}
         self._orders: list[PaperOrder] = []
+        self._trades: list[dict] = []
         self._last_funding_ts: float = datetime.now(timezone.utc).timestamp()
         self._current_prices: dict[str, float] = {}
 
@@ -143,9 +144,25 @@ class PaperTrader(BaseExecutor):
             "unrealized_pnl": total_pnl,
         }
 
-    def get_position(self, symbol: str) -> dict[str, Any]:
-        """Return current simulated position for symbol."""
-        pos = self._positions.get(symbol)
+    def get_position(self, symbol: str | None = None) -> dict[str, Any]:
+        """Return current simulated position for symbol.
+
+        If symbol is None, returns the first open position or a flat-position dict.
+        """
+        if symbol is None:
+            if not self._positions:
+                return {
+                    "side": None,
+                    "size": 0.0,
+                    "entry_price": 0.0,
+                    "unrealized_pnl": 0.0,
+                    "liquidation_price": 0.0,
+                    "leverage": self._leverage,
+                    "margin_type": "isolated",
+                }
+            pos = next(iter(self._positions.values()))
+        else:
+            pos = self._positions.get(symbol)
         if pos is None:
             return {
                 "side": None,
@@ -286,6 +303,10 @@ class PaperTrader(BaseExecutor):
         """Return all simulated orders."""
         return [self._order_to_dict(o) for o in self._orders]
 
+    def get_trade_history(self) -> list[dict[str, Any]]:
+        """Return all completed trades (position closes)."""
+        return list(self._trades)
+
     def set_funding_rate(self, rate: float) -> None:
         """Override the simulated funding rate (e.g. from live feed)."""
         self._funding_rate = rate
@@ -403,6 +424,17 @@ class PaperTrader(BaseExecutor):
             pnl,
             fee,
         )
+
+        self._trades.append({
+            "symbol": symbol,
+            "side": pos.side,
+            "entry_price": pos.entry_price,
+            "exit_price": price,
+            "size": close_amount,
+            "pnl": round(pnl - fee, 6),
+            "fee": round(fee, 6),
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+        })
 
         if close_amount >= pos.size:
             del self._positions[symbol]

@@ -1,0 +1,50 @@
+[
+  {
+    "config": "1x/0.0001",
+    "leverage": 1,
+    "threshold": 0.0001,
+    "final": 10419.51,
+    "return_pct": 4.2,
+    "trades": 276
+  },
+  {
+    "config": "2x/0.0001",
+    "leverage": 2,
+    "threshold": 0.0001,
+    "final": 10923.43,
+    "return_pct": 9.23,
+    "trades": 276
+  },
+  {
+    "config": "3x/0.0001",
+    "leverage": 3,
+    "threshold": 0.0001,
+    "final": 11427.34,
+    "return_pct": 14.27,
+    "trades": 276
+  },
+  {
+    "config": "3x/0.0005",
+    "leverage": 3,
+    "threshold": 0.0005,
+    "final": 10000,
+    "return_pct": 0.0,
+    "trades": 0
+  },
+  {
+    "config": "3x/0.001",
+    "leverage": 3,
+    "threshold": 0.001,
+    "final": 10000,
+    "return_pct": 0.0,
+    "trades": 0
+  },
+  {
+    "config": "5x/0.0001",
+    "leverage": 5,
+    "threshold": 0.0001,
+    "final": 12435.17,
+    "return_pct": 24.35,
+    "trades": 276
+  }
+]

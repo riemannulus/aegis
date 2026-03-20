@@ -32,20 +32,17 @@ st.subheader("Current Risk Status")
 drawdown_pct = risk_status.get("current_drawdown_pct", metrics.get("max_drawdown", 0)) * 100
 daily_loss_used = risk_status.get("daily_loss_used_pct", 0) * 100
 consecutive_losses = risk_status.get("consecutive_losses", 0)
-daily_trades = risk_status.get("daily_trades", 0)
-effective_leverage = risk_status.get("effective_leverage", 0)
-hwm = risk_status.get("high_water_mark", 0)
-current_equity = risk_status.get("current_equity", 0)
+risk_level = risk_status.get("risk_level", "unknown")
+position_ratio = risk_status.get("position_ratio", 0)
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4 = st.columns(4)
 c1.metric("Current Drawdown", f"{drawdown_pct:.2f}%",
           delta_color="inverse")
-c2.metric("Daily Loss Used", f"{daily_loss_used:.1f}% / 5%",
+c2.metric("Daily Loss Used", f"{daily_loss_used:.2f}% / 5%",
           delta_color="inverse")
-c3.metric("Daily Trades", f"{daily_trades} / 20")
-c4.metric("Consecutive Losses", f"{consecutive_losses} / 5",
+c3.metric("Consecutive Losses", f"{consecutive_losses} / 5",
           delta_color="inverse")
-c5.metric("Effective Leverage", f"{effective_leverage:.1f}x")
+c4.metric("Risk Level", risk_level.upper())
 
 st.divider()
 
@@ -91,21 +88,26 @@ if equity_data:
     eq_df = pd.DataFrame(equity_data)
     if "timestamp" not in eq_df.columns and "exit_time" in eq_df.columns:
         eq_df = eq_df.rename(columns={"exit_time": "timestamp"})
-    eq_df["timestamp"] = pd.to_datetime(eq_df["timestamp"])
-    eq_df["hwm"] = eq_df["equity"].cummax()
+    if "equity" not in eq_df.columns and "cum_pnl" in eq_df.columns:
+        eq_df["equity"] = 10000 + eq_df["cum_pnl"]
+    if "timestamp" not in eq_df.columns or "equity" not in eq_df.columns:
+        st.info("Equity curve data missing required columns.")
+    else:
+        eq_df["timestamp"] = pd.to_datetime(eq_df["timestamp"])
+        eq_df["hwm"] = eq_df["equity"].cummax()
 
-    fig_eq = go.Figure()
-    fig_eq.add_trace(go.Scatter(x=eq_df["timestamp"], y=eq_df["equity"],
-                                mode="lines", name="Equity", line=dict(color="#00d4aa")))
-    fig_eq.add_trace(go.Scatter(x=eq_df["timestamp"], y=eq_df["hwm"],
-                                mode="lines", name="High Water Mark",
-                                line=dict(color="#f7931a", dash="dot")))
-    fig_eq.update_layout(title="Account Equity vs High Water Mark",
-                         template="plotly_dark", xaxis_title="Time", yaxis_title="USDT",
-                         margin=dict(l=40, r=20, t=60, b=40))
-    st.plotly_chart(fig_eq, use_container_width=True)
+        fig_eq = go.Figure()
+        fig_eq.add_trace(go.Scatter(x=eq_df["timestamp"], y=eq_df["equity"],
+                                    mode="lines", name="Equity", line=dict(color="#00d4aa")))
+        fig_eq.add_trace(go.Scatter(x=eq_df["timestamp"], y=eq_df["hwm"],
+                                    mode="lines", name="High Water Mark",
+                                    line=dict(color="#f7931a", dash="dot")))
+        fig_eq.update_layout(title="Account Equity vs High Water Mark",
+                             template="plotly_dark", xaxis_title="Time", yaxis_title="USDT",
+                             margin=dict(l=40, r=20, t=60, b=40))
+        st.plotly_chart(fig_eq, use_container_width=True)
 
-    st.plotly_chart(drawdown_chart(eq_df, title="Drawdown History"), use_container_width=True)
+        st.plotly_chart(drawdown_chart(eq_df, title="Drawdown History"), use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Daily loss budget bar

@@ -49,3 +49,24 @@ async def stop_system():
         return ControlResponse(success=False, message="System not running")
     _system_running = False
     return ControlResponse(success=True, message="System stopped")
+
+
+class LeverageRequest(BaseModel):
+    leverage: int
+
+
+@router.post("/emergency-exit", response_model=ControlResponse)
+async def emergency_exit():
+    return ControlResponse(success=True, message="Emergency exit triggered — all positions closed (stub)")
+
+
+@router.post("/set-leverage", response_model=ControlResponse)
+async def set_leverage(req: LeverageRequest):
+    if req.leverage < 1 or req.leverage > 125:
+        return ControlResponse(success=False, message=f"Invalid leverage: {req.leverage}")
+    return ControlResponse(success=True, message=f"Leverage set to {req.leverage}x (stub)")
+
+
+@router.post("/force-retrain", response_model=ControlResponse)
+async def force_retrain():
+    return ControlResponse(success=True, message="Model retraining triggered (stub)")

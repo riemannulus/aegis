@@ -20,17 +20,44 @@ st.title("Model Performance Monitor")
 st.caption("Early detection of model staleness and performance degradation.")
 
 # ---------------------------------------------------------------------------
+# Sidebar: Training Controls
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.header("Training Controls")
+    if st.button("Force Retrain", type="primary", use_container_width=True):
+        with st.spinner("Triggering retraining..."):
+            result = api.post_force_retrain()
+        if result:
+            st.success(f"Retrain triggered: {result.get('message', 'OK')}")
+        else:
+            st.error("Failed to trigger retrain (API unavailable)")
+
+    st.divider()
+    st.subheader("Ensemble Parameters")
+    st.caption("Reference values (read-only)")
+    st.metric("num_leaves", 31)
+    st.metric("n_estimators", 100)
+    st.metric("n_folds", 5)
+
+# ---------------------------------------------------------------------------
 # Fetch
 # ---------------------------------------------------------------------------
-model_metrics = api.get_model_metrics() or {}
+with st.spinner("Loading model metrics..."):
+    model_metrics = api.get_model_metrics() or {}
 
 # ---------------------------------------------------------------------------
 # Retrain schedule
 # ---------------------------------------------------------------------------
 st.subheader("Retrain Schedule")
-c1, c2 = st.columns(2)
+c1, c2, c3 = st.columns(3)
 c1.metric("Last Retrain", model_metrics.get("last_retrain_at", "N/A"))
 c2.metric("Next Retrain", model_metrics.get("next_retrain_at", "N/A"))
+model_files = model_metrics.get("model_files", [])
+c3.metric("Saved Model Files", len(model_files))
+
+if model_files:
+    with st.expander("Saved model files"):
+        st.write(model_files)
 
 # ---------------------------------------------------------------------------
 # IC trends

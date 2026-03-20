@@ -187,6 +187,42 @@ def _compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int 
     return adx
 
 
+class FeatureEngineer:
+    """OOP wrapper around compute_features() for use by backtest and API."""
+
+    def compute(
+        self,
+        candles: "list[dict] | pd.DataFrame",
+        funding_df: "pd.DataFrame | None" = None,
+    ) -> pd.DataFrame:
+        """Compute features from candle data.
+
+        Args:
+            candles: list of candle dicts (from storage.get_candles_range) or a DataFrame.
+            funding_df: optional funding rate DataFrame.
+
+        Returns:
+            DataFrame with feature columns, timestamp as index.
+            Returns empty DataFrame if insufficient data (< 50 rows).
+        """
+        if isinstance(candles, list):
+            if not candles:
+                return pd.DataFrame()
+            df = pd.DataFrame(candles)
+            df.drop(columns=["_sa_instance_state"], errors="ignore", inplace=True)
+        else:
+            df = candles.copy()
+
+        if len(df) < 50:
+            logger.warning("FeatureEngineer.compute: insufficient data (%d rows)", len(df))
+            return pd.DataFrame()
+
+        feat = compute_features(df, funding_df=funding_df)
+        if "timestamp" in feat.columns:
+            feat = feat.set_index("timestamp")
+        return feat
+
+
 FEATURE_COLUMNS = [
     # Momentum
     "return_1h", "return_4h", "return_12h", "return_24h",

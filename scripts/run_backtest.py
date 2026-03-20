@@ -141,9 +141,10 @@ def main() -> None:
             sig = signal_conv.convert(ensemble_pred)
 
             # Current paper state
-            balance = paper.get_balance()
+            bal = paper.get_balance()
+            balance = bal["available"] if isinstance(bal, dict) else bal
             pos = paper.get_position()
-            equity = balance + (pos.get("unrealized_pnl", 0.0) if pos else 0.0)
+            equity = bal["total"] if isinstance(bal, dict) else balance + (pos.get("unrealized_pnl", 0.0) if pos else 0.0)
             equity_curve.append({"timestamp": str(ts), "equity": equity})
 
             candle_price = float(row.get("close", 0.0))
@@ -200,7 +201,8 @@ def main() -> None:
     pnl_calc = PnLCalculator()
     perf = PerformanceMetrics()
 
-    final_balance = paper.get_balance()
+    final_bal = paper.get_balance()
+    final_balance = final_bal["total"] if isinstance(final_bal, dict) else final_bal
     total_return = (final_balance - args.capital) / args.capital
 
     logger.info("--- Backtest Results ---")

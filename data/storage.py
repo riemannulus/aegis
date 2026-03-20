@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import (
@@ -109,6 +109,17 @@ class Trade(Base):
     exit_price = Column(Float, nullable=False)
     pnl = Column(Float, nullable=False)
     funding_cost = Column(Float, default=0.0)
+
+
+class RiskEvent(Base):
+    __tablename__ = "risk_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(Integer, nullable=False, index=True)
+    event_type = Column(String(32), nullable=False)  # DRAWDOWN_WARNING, POSITION_LIMIT, etc
+    severity = Column(String(16), nullable=False)    # INFO, WARNING, CRITICAL
+    description = Column(Text)
+    details = Column(Text)  # JSON
 
 
 def _enable_wal(dbapi_conn, _connection_record):
@@ -239,7 +250,7 @@ class Storage:
                 .limit(limit)
                 .all()
             )
-            return [r.__dict__ for r in reversed(rows)]
+            return [{k: v for k, v in r.__dict__.items() if not k.startswith("_")} for r in reversed(rows)]
 
     # ------------------------------------------------------------------
     # Signals
@@ -325,3 +336,89 @@ class Storage:
                 .all()
             )
             return [{k: v for k, v in r.__dict__.items() if not k.startswith("_")} for r in rows]
+
+    # ------------------------------------------------------------------
+    # Candle range (date-string interface for backtest)
+    # ------------------------------------------------------------------
+
+    def get_candles_range(
+        self,
+        symbol: str,
+        interval: str,
+        start: str,
+        end: str,
+    ) -> list[dict]:
+        """Get candles between start and end date strings ('YYYY-MM-DD').
+
+        Converts date strings to ms timestamps and delegates to get_candles().
+        Returns list of dicts with _sa_instance_state stripped.
+        """
+        start_ts = int(datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+        end_ts = int(datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+        rows = self.get_candles(symbol=symbol, interval=interval, start_ts=start_ts, end_ts=end_ts)
+        return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+
+    # ------------------------------------------------------------------
+    # Risk events
+    # ------------------------------------------------------------------
+
+    def insert_risk_event(self, row: dict) -> None:
+        with self._session() as sess:
+            sess.add(RiskEvent(**row))
+            sess.commit()
+
+    def get_risk_events(self, limit: int = 100) -> list[dict]:
+        with self._session() as sess:
+            rows = (
+                sess.query(RiskEvent)
+                .order_by(RiskEvent.timestamp.desc())
+                .limit(limit)
+                .all()
+            )
+            result = []
+            for r in rows:
+                d = {k: v for k, v in r.__dict__.items() if not k.startswith("_")}
+                if d.get("details"):
+                    try:
+                        d["details"] = json.loads(d["details"])
+                    except Exception:
+                        pass
+                result.append(d)
+            return result
+
+    # ------------------------------------------------------------------
+    # Backtest results (scan data/backtest_results/ directory)
+    # ------------------------------------------------------------------
+
+    def get_backtest_results(self) -> list[dict]:
+        """Scan data/backtest_results/ for JSON files and return list of summaries."""
+        import glob
+        results_dir = "data/backtest_results"
+        summaries = []
+        for path in sorted(glob.glob(f"{results_dir}/*.json"), reverse=True):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                backtest_id = os.path.splitext(os.path.basename(path))[0]
+                summary = {
+                    "backtest_id": backtest_id,
+                    "path": path,
+                }
+                summary.update(data.get("backtest_params", {}))
+                summary.update(data.get("summary", {}))
+                summaries.append(summary)
+            except Exception:
+                pass
+        return summaries
+
+    def get_backtest_detail(self, backtest_id: str) -> dict | None:
+        """Load a specific backtest result JSON by ID (filename without extension)."""
+        results_dir = "data/backtest_results"
+        path = os.path.join(results_dir, f"{backtest_id}.json")
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
